@@ -14,13 +14,16 @@ from matplotlib.figure import Figure
 from sklearn import datasets, preprocessing, model_selection
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-from sklearn.svm import SVC
+from sklearn.svm import SVC, SVR
+from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score, mean_squared_error, confusion_matrix
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import HuberRegressor
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
@@ -50,6 +53,107 @@ class MLCourseGUI(QMainWindow):
         self.create_tabs()
         self.create_visualization()
         self.create_status_bar()
+
+    def train_model(self, model_name, param_widgets):
+        """Train the selected classical machine learning model based on parameters"""
+        try:
+            # Retrieve the parameters from the widgets
+            loss_function = param_widgets["loss_function"].currentText()  # Seçilen kayıp fonksiyonunu al
+            
+            if model_name == "Linear Regression":
+                model = LinearRegression(fit_intercept=param_widgets["fit_intercept"].isChecked(),
+                                         normalize=param_widgets["normalize"].isChecked())
+                if loss_function == "MSE":
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "MAE":
+                    model = LinearRegression(fit_intercept=param_widgets["fit_intercept"].isChecked(),
+                                             normalize=param_widgets["normalize"].isChecked(), 
+                                             loss='mean_absolute_error')
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "Huber":
+                    model = HuberRegressor()
+                    model.fit(self.X_train, self.y_train)
+            
+            elif model_name == "Logistic Regression":
+                model = LogisticRegression(C=param_widgets["C"].value(),
+                                            max_iter=param_widgets["max_iter"].value(),
+                                            multi_class=param_widgets["multi_class"].currentText())
+                if loss_function == "MSE":
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "MAE":
+                    model = LogisticRegression(C=param_widgets["C"].value(),
+                                                max_iter=param_widgets["max_iter"].value(),
+                                                multi_class=param_widgets["multi_class"].currentText(),
+                                                loss='mean_absolute_error')
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "Huber":
+                    model = HuberRegressor()
+                    model.fit(self.X_train, self.y_train)
+
+            elif model_name == "Support Vector Regression":
+                model = SVR(kernel=param_widgets["kernel"].currentText(),
+                            C=param_widgets["C"].value(),
+                            epsilon=param_widgets["epsilon"].value())
+                if loss_function == "MSE":
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "MAE":
+                    model = SVR(kernel=param_widgets["kernel"].currentText(),
+                                C=param_widgets["C"].value(),
+                                epsilon=param_widgets["epsilon"].value(),
+                                loss='mean_absolute_error')
+                    model.fit(self.X_train, self.y_train)
+                elif loss_function == "Huber":
+                    model = HuberRegressor()
+                    model.fit(self.X_train, self.y_train)
+
+            elif model_name == "Naive Bayes":
+                model = GaussianNB()
+                if loss_function == "Cross-Entropy":
+                    # Naive Bayes için Cross-Entropy kaybını kullanabiliriz (sklearn doğrudan kullanmaz, burada ilginçtir).
+                    pass
+                model.fit(self.X_train, self.y_train)
+        
+            if model_name == "Gaussian Naive Bayes":
+                var_smoothing = param_widgets["var_smoothing"].value()
+                prior = param_widgets["prior"].currentText()
+                if prior == "user-defined":
+                    # Get custom priors
+                    custom_priors_text = self.layer_param_inputs["custom_priors"].text()
+                    custom_priors = list(map(float, custom_priors_text.split(',')))
+                    
+                    # Ensure that the sum of probabilities equals 1
+                    if not np.isclose(sum(custom_priors), 1.0):
+                        self.show_error("Custom priors must sum to 1.")
+                        return
+                    
+                    # Create the model with custom priors
+                    model = GaussianNB(var_smoothing=var_smoothing, priors=custom_priors)
+                else:
+                    model = GaussianNB(var_smoothing=var_smoothing)
+
+                model.fit(self.X_train, self.y_train)
+
+            elif model_name == "Support Vector Machine":
+                model = SVC(kernel='linear')  # Linear SVM
+                if loss_function == "Hinge Loss":
+                    # Hinge loss için uygun SVM kullanımı
+                    model = SVC(kernel='linear', loss='hinge')  # Hinge loss
+                model.fit(self.X_train, self.y_train)
+        
+            elif model_name == "Decision Tree":
+                model = DecisionTreeClassifier()
+                if loss_function == "Cross-Entropy":
+                    # Decision Trees için Cross-Entropy kaybı
+                    pass  # Bu kısmı uygun şekilde uygulayabiliriz.
+                model.fit(self.X_train, self.y_train)
+
+            # Model eğitildikten sonra metrik hesaplamaları ve görselleştirme işlemleri yapılır
+            self.update_metrics(model.predict(self.X_test))
+            self.update_visualization(model.predict(self.X_test))
+
+        except Exception as e:
+            self.show_error(f"Error training model: {str(e)}")
+
     def load_dataset(self):
         """Load selected dataset"""
         try:
@@ -65,8 +169,8 @@ class MLCourseGUI(QMainWindow):
                 data = datasets.load_breast_cancer()
             elif dataset_name == "Digits Dataset":
                 data = datasets.load_digits()
-            elif dataset_name == "Boston Housing Dataset":
-                data = datasets.load_boston()
+            elif dataset_name == "California Housing Dataset":
+                data = datasets.fetch_california_housing()
             elif dataset_name == "MNIST Dataset":
                 (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
                 self.X_train, self.X_test = X_train, X_test
@@ -74,13 +178,12 @@ class MLCourseGUI(QMainWindow):
                 self.status_bar.showMessage(f"Loaded {dataset_name}")
                 return
             
-            # Split data
-            test_size = self.split_spin.value()
-            self.X_train, self.X_test, self.y_train, self.y_test = \
-                model_selection.train_test_split(data.data, data.target, 
-                                              test_size=test_size, 
-                                              random_state=42)
-            
+            # Apply imputation method for missing values if selected
+            self.apply_imputation()
+
+            # Split data according to the selected method
+            self.split_data()
+
             # Apply scaling if selected
             self.apply_scaling()
             
@@ -89,6 +192,25 @@ class MLCourseGUI(QMainWindow):
         except Exception as e:
             self.show_error(f"Error loading dataset: {str(e)}")
     
+    def split_data(self):
+        """Split the dataset into train and test based on selected method"""
+        split_method = self.split_method_combo.currentText()
+        test_size = self.split_spin.value()
+        
+        if split_method == "Random Split":
+            # Random split using sklearn's train_test_split
+            self.X_train, self.X_test, self.y_train, self.y_test = \
+                model_selection.train_test_split(self.X_train, self.y_train, 
+                                                test_size=test_size, 
+                                                random_state=42)
+        
+        elif split_method == "Sequential Split":
+            # Sequential split (no shuffling)
+            split_index = int((1 - test_size) * len(self.X_train))
+            
+            self.X_train, self.X_test = self.X_train[:split_index], self.X_train[split_index:]
+            self.y_train, self.y_test = self.y_train[:split_index], self.y_train[split_index:]
+
     def load_custom_data(self):
         """Load custom dataset from CSV file"""
         try:
@@ -161,6 +283,7 @@ class MLCourseGUI(QMainWindow):
                 
             except Exception as e:
                 self.show_error(f"Error applying scaling: {str(e)}")
+
     def create_data_section(self):
         """Create the data loading and preprocessing section"""
         data_group = QGroupBox("Data Management")
@@ -173,7 +296,7 @@ class MLCourseGUI(QMainWindow):
             "Iris Dataset",
             "Breast Cancer Dataset",
             "Digits Dataset",
-            "Boston Housing Dataset",
+            "California Housing Dataset",
             "MNIST Dataset"
         ])
         self.dataset_combo.currentIndexChanged.connect(self.load_dataset)
@@ -191,6 +314,23 @@ class MLCourseGUI(QMainWindow):
             "Robust Scaling"
         ])
         
+        # Imputation Method selection for missing values
+        self.imputation_combo = QComboBox()
+        self.imputation_combo.addItems([
+            "No Imputation",
+            "Mean Imputation",
+            "Interpolation",
+            "Forward Fill",
+            "Backward Fill"
+        ])
+
+        # Split Method selection for train/test
+        self.split_method_combo = QComboBox()
+        self.split_method_combo.addItems([
+            "Random Split",
+            "Sequential Split"
+        ])
+
         # Train-test split options
         self.split_spin = QDoubleSpinBox()
         self.split_spin.setRange(0.1, 0.9)
@@ -205,10 +345,41 @@ class MLCourseGUI(QMainWindow):
         data_layout.addWidget(self.scaling_combo)
         data_layout.addWidget(QLabel("Test Split:"))
         data_layout.addWidget(self.split_spin)
+        data_layout.addWidget(QLabel("Missing Value Handling:"))
+        data_layout.addWidget(self.imputation_combo)
+        data_layout.addWidget(QLabel("Split Method:"))
+        data_layout.addWidget(self.split_method_combo)
         
         data_group.setLayout(data_layout)
         self.layout.addWidget(data_group)
     
+    def apply_imputation(self):
+        """Apply the selected method for handling missing values"""
+        imputation_method = self.imputation_combo.currentText()
+        
+        if imputation_method == "No Imputation":
+            return  # No imputation, just return as is
+        
+        try:
+                # Initialize SimpleImputer with the chosen strategy
+            if imputation_method == "Mean Imputation":
+                imputer = SimpleImputer(strategy='mean')
+            elif imputation_method == "Median Imputation":
+                imputer = SimpleImputer(strategy='median')
+            elif imputation_method == "Most Frequent":
+                imputer = SimpleImputer(strategy='most_frequent')
+            elif imputation_method == "Constant Value":
+                # For constant value imputation, ask the user to enter the value
+                constant_value = self.get_constant_value()
+                imputer = SimpleImputer(strategy='constant', fill_value=constant_value)
+            
+            # Apply the imputer to both training and testing data
+            self.X_train = imputer.fit_transform(self.X_train)
+            self.X_test = imputer.transform(self.X_test)
+                
+        except Exception as e:
+            self.show_error(f"Error handling missing values: {str(e)}")
+
     def create_tabs(self):
         """Create tabs for different ML topics"""
         self.tab_widget = QTabWidget()
@@ -243,7 +414,8 @@ class MLCourseGUI(QMainWindow):
         lr_group = self.create_algorithm_group(
             "Linear Regression",
             {"fit_intercept": "checkbox",
-             "normalize": "checkbox"}
+             "normalize": "checkbox",
+              "loss_function": ["MSE", "MAE", "Huber"]}
         )
         regression_layout.addWidget(lr_group)
         
@@ -252,10 +424,22 @@ class MLCourseGUI(QMainWindow):
             "Logistic Regression",
             {"C": "double",
              "max_iter": "int",
-             "multi_class": ["ovr", "multinomial"]}
+             "multi_class": ["ovr", "multinomial"],
+             "loss_function": ["MSE", "MAE", "Huber"]}
         )
         regression_layout.addWidget(logistic_group)
         
+        # SVR
+        svr_group = self.create_algorithm_group(
+            "Support Vector Regression",
+            {"C": "double",
+             "epsilon:": "double",
+             "kernel": ["linear", "rbf", "poly"],
+             "degree": "int",
+             "loss_function": ["MSE", "MAE", "Huber"]}
+        )
+        regression_layout.addWidget(svr_group)
+
         regression_group.setLayout(regression_layout)
         layout.addWidget(regression_group, 0, 0)
         
@@ -263,10 +447,24 @@ class MLCourseGUI(QMainWindow):
         classification_group = QGroupBox("Classification")
         classification_layout = QVBoxLayout()
         
+        # Gaussian Naive Bayes
+        gnb_group = self.create_algorithm_group(
+            "Gaussian Naive Bayes",
+            {"var_smoothing": "double",
+             "priors": ["uniform", "user-defined"],
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
+        )
+        classification_layout.addWidget(gnb_group)
+
+        gnb_layout = gnb_group.layout()
+        prior_combo = gnb_group.param_widgets["priors"]
+        prior_combo.currentIndexChanged.connect(lambda: self.create_prior_fields(gnb_layout, gnb_group))
+
         # Naive Bayes
         nb_group = self.create_algorithm_group(
             "Naive Bayes",
-            {"var_smoothing": "double"}
+            {"var_smoothing": "double",
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
         )
         classification_layout.addWidget(nb_group)
         
@@ -275,7 +473,8 @@ class MLCourseGUI(QMainWindow):
             "Support Vector Machine",
             {"C": "double",
              "kernel": ["linear", "rbf", "poly"],
-             "degree": "int"}
+             "degree": "int",
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
         )
         classification_layout.addWidget(svm_group)
         
@@ -284,7 +483,8 @@ class MLCourseGUI(QMainWindow):
             "Decision Tree",
             {"max_depth": "int",
              "min_samples_split": "int",
-             "criterion": ["gini", "entropy"]}
+             "criterion": ["gini", "entropy"],
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
         )
         classification_layout.addWidget(dt_group)
         
@@ -293,7 +493,8 @@ class MLCourseGUI(QMainWindow):
             "Random Forest",
             {"n_estimators": "int",
              "max_depth": "int",
-             "min_samples_split": "int"}
+             "min_samples_split": "int",
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
         )
         classification_layout.addWidget(rf_group)
         
@@ -302,7 +503,8 @@ class MLCourseGUI(QMainWindow):
             "K-Nearest Neighbors",
             {"n_neighbors": "int",
              "weights": ["uniform", "distance"],
-             "metric": ["euclidean", "manhattan"]}
+             "metric": ["euclidean", "manhattan"],
+             "loss_function": ["Cross-Entropy", "Hinge Loss"]}
         )
         classification_layout.addWidget(knn_group)
         
@@ -311,6 +513,35 @@ class MLCourseGUI(QMainWindow):
         
         return widget
     
+    def create_prior_fields(self, layout, gnb_group):
+        """Create user-defined prior fields if selected"""
+        # Get the prior ComboBox
+        prior_combo = gnb_group.param_widgets["priors"]
+        
+        # Remove prior probability fields if any exist (for clean-up)
+        for item in layout.findChildren(QDoubleSpinBox):
+            item.deleteLater()
+        for item in layout.findChildren(QLineEdit):
+            item.deleteLater()
+        
+        # Check if the user has selected 'user-defined' as prior type
+        if prior_combo.currentText() == "user-defined":
+            # Number of unique classes (can be dynamically set based on y_train classes)
+            num_classes = len(np.unique(self.y_train))
+            
+            # Create a text input field for the user to enter custom probabilities
+            prior_label = QLabel("Enter custom probabilities (e.g., [0.3, 0.7]):")
+            prior_input = QLineEdit()
+            prior_input.setText(", ".join([f"{1.0/num_classes:.2f}"] * num_classes))  # Default uniform prior
+            self.layer_param_inputs["custom_priors"] = prior_input  # Store reference
+        
+            layout.addWidget(prior_label)
+            layout.addWidget(prior_input)
+
+        else:
+            # If prior is not user-defined, no additional fields are needed
+            pass
+
     def create_dim_reduction_tab(self):
         """Create the dimensionality reduction tab"""
         widget = QWidget()
@@ -422,12 +653,15 @@ class MLCourseGUI(QMainWindow):
             param_layout = QHBoxLayout()
             param_layout.addWidget(QLabel(f"{param_name}:"))
             
-            if param_type == "int":
+            if param_type == "loss function":
+                widget = QComboBox()
+                widget.addItems(param_type)
+            elif param_type == "int":
                 widget = QSpinBox()
                 widget.setRange(1, 1000)
             elif param_type == "double":
                 widget = QDoubleSpinBox()
-                widget.setRange(0.0001, 1000.0)
+                widget.setRange(0.0, 10.0)
                 widget.setSingleStep(0.1)
             elif param_type == "checkbox":
                 widget = QCheckBox()
@@ -439,6 +673,8 @@ class MLCourseGUI(QMainWindow):
             param_widgets[param_name] = widget
             layout.addLayout(param_layout)
         
+        group.param_widgets = param_widgets
+
         # Add train button
         train_btn = QPushButton(f"Train {name}")
         train_btn.clicked.connect(lambda: self.train_model(name, param_widgets))
@@ -896,4 +1132,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
